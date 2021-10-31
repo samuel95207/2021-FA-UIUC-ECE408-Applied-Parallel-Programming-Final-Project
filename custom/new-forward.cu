@@ -1,9 +1,11 @@
 #include <cmath>
 #include <iostream>
+
 #include "gpu-new-forward.h"
 
-__global__ void conv_forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K)
-{
+#define TILE_WIDTH 16
+
+__global__ void conv_forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K) {
     /*
     Modify this function to implement the forward pass described in Chapter 16.
     We have added an additional dimension to the tensors to support an entire mini-batch
@@ -23,8 +25,6 @@ __global__ void conv_forward_kernel(float *y, const float *x, const float *k, co
 
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
-    (void)H_out; // silence declared but never referenced warning. remove this line when you start working
-    (void)W_out; // silence declared but never referenced warning. remove this line when you start working
 
     // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
     // An example use of these macros:
@@ -36,17 +36,56 @@ __global__ void conv_forward_kernel(float *y, const float *x, const float *k, co
 #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-   
+    int W_grid = ceil(W_out / float(TILE_WIDTH));
+
+    int b = blockIdx.x;
+    int m = blockIdx.y;
+    int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
+    int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
+
+    if ((w < (W_out)) && (h < (H_out))) {
+        float acc = 0.0f;
+        for (int c = 0; c < C; c++) {
+            for (int p = 0; p < K; p++) {
+                for (int q = 0; q < K; q++) {
+                    acc += x4d(b, c, h + p, w + q) * k4d(m, c, p, q);
+                }
+            }
+        }
+        y4d(b, m, h, w) = acc;
+    }
+
 
 #undef y4d
 #undef x4d
 #undef k4d
 }
 
-	
-__host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const float *host_x, const float *host_k, float **device_y_ptr, float **device_x_ptr, float **device_k_ptr, const int B, const int M, const int C, const int H, const int W, const int K)
-{
+
+__host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const float *host_x, const float *host_k, float **device_y_ptr, float **device_x_ptr, float **device_k_ptr, const int B, const int M, const int C, const int H, const int W, const int K) {
     // Allocate memory and copy over the relevant data structures to the GPU
+    const int H_out = H - K + 1;
+    const int W_out = W - K + 1;
+
+    const unsigned int xSize = B * C * H * W * sizeof(float);
+    const unsigned int ySize = B * M * H_out * W_out * sizeof(float);
+    const unsigned int kSize = M * C * K * K * sizeof(float);
+
+    cudaMalloc((void **)device_x_ptr, xSize);
+    cudaMalloc((void **)device_y_ptr, ySize);
+    cudaMalloc((void **)device_k_ptr, kSize);
+
+    // std::cout << "Successfully allocate cuda memory" << std::endl;
+
+
+    cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(*device_y_ptr, (void *)host_y, ySize, cudaMemcpyHostToDevice);
+    cudaMemcpy(*device_k_ptr, (void *)host_k, kSize, cudaMemcpyHostToDevice);
+
+    // std::cout << "Successfully copy data to cuda memory" << std::endl;
+
+
+
 
     // We pass double pointers for you to initialize the relevant device pointers,
     //  which are passed to the other two functions.
@@ -58,44 +97,55 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const f
     //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
     //     exit(-1);
     // }
-
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu(float *device_y, const float *device_x, const float *device_k, const int B, const int M, const int C, const int H, const int W, const int K)
-{
+__host__ void GPUInterface::conv_forward_gpu(float *device_y, const float *device_x, const float *device_k, const int B, const int M, const int C, const int H, const int W, const int K) {
     // Set the kernel dimensions and call the kernel
+    const int H_out = H - K + 1;
+    const int W_out = W - K + 1;
+    const int H_grid = ceil(H_out / float(TILE_WIDTH));
+    const int W_grid = ceil(W_out / float(TILE_WIDTH));
+
+    dim3 DimGrid(B, M, H_grid * W_grid);
+    dim3 DimBlock(TILE_WIDTH, TILE_WIDTH, 1);
+    conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, device_k, B, M, C, H, W, K);
+
+    cudaDeviceSynchronize();
 
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_y, float *device_y, float *device_x, float *device_k, const int B, const int M, const int C, const int H, const int W, const int K)
-{
+__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_y, float *device_y, float *device_x, float *device_k, const int B, const int M, const int C, const int H, const int W, const int K) {
     // Copy the output back to host
+    const int H_out = H - K + 1;
+    const int W_out = W - K + 1;
+    const unsigned int ySize = B * M * H_out * W_out * sizeof(float);
+    cudaMemcpy(host_y, device_y, ySize, cudaMemcpyDeviceToHost);
 
     // Free device memory
-
+    cudaFree(device_x);
+    cudaFree(device_y);
+    cudaFree(device_k);
 }
 
 
-__host__ void GPUInterface::get_device_properties()
-{
+__host__ void GPUInterface::get_device_properties() {
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
 
-    for(int dev = 0; dev < deviceCount; dev++)
-    {
+    for (int dev = 0; dev < deviceCount; dev++) {
         cudaDeviceProp deviceProp;
         cudaGetDeviceProperties(&deviceProp, dev);
 
-        std::cout<<"Device "<<dev<<" name: "<<deviceProp.name<<std::endl;
-        std::cout<<"Computational capabilities: "<<deviceProp.major<<"."<<deviceProp.minor<<std::endl;
-        std::cout<<"Max Global memory size: "<<deviceProp.totalGlobalMem<<std::endl;
-        std::cout<<"Max Constant memory size: "<<deviceProp.totalConstMem<<std::endl;
-        std::cout<<"Max Shared memory size per block: "<<deviceProp.sharedMemPerBlock<<std::endl;
-        std::cout<<"Max threads per block: "<<deviceProp.maxThreadsPerBlock<<std::endl;
-        std::cout<<"Max block dimensions: "<<deviceProp.maxThreadsDim[0]<<" x, "<<deviceProp.maxThreadsDim[1]<<" y, "<<deviceProp.maxThreadsDim[2]<<" z"<<std::endl;
-        std::cout<<"Max grid dimensions: "<<deviceProp.maxGridSize[0]<<" x, "<<deviceProp.maxGridSize[1]<<" y, "<<deviceProp.maxGridSize[2]<<" z"<<std::endl;
-        std::cout<<"Warp Size: "<<deviceProp.warpSize<<std::endl;
+        std::cout << "Device " << dev << " name: " << deviceProp.name << std::endl;
+        std::cout << "Computational capabilities: " << deviceProp.major << "." << deviceProp.minor << std::endl;
+        std::cout << "Max Global memory size: " << deviceProp.totalGlobalMem << std::endl;
+        std::cout << "Max Constant memory size: " << deviceProp.totalConstMem << std::endl;
+        std::cout << "Max Shared memory size per block: " << deviceProp.sharedMemPerBlock << std::endl;
+        std::cout << "Max threads per block: " << deviceProp.maxThreadsPerBlock << std::endl;
+        std::cout << "Max block dimensions: " << deviceProp.maxThreadsDim[0] << " x, " << deviceProp.maxThreadsDim[1] << " y, " << deviceProp.maxThreadsDim[2] << " z" << std::endl;
+        std::cout << "Max grid dimensions: " << deviceProp.maxGridSize[0] << " x, " << deviceProp.maxGridSize[1] << " y, " << deviceProp.maxGridSize[2] << " z" << std::endl;
+        std::cout << "Warp Size: " << deviceProp.warpSize << std::endl;
     }
 }
