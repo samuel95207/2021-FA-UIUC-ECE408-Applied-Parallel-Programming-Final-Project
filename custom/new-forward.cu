@@ -43,7 +43,7 @@ __global__ void conv_forward_kernel(float *y, const float *x, const float *k, co
     int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
     int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
 
-    if ((w < (W_out)) && (h < (H_out))) {
+    if ((w < W_out) && (h < H_out)) {
         float acc = 0.0f;
         for (int c = 0; c < C; c++) {
             for (int p = 0; p < K; p++) {
