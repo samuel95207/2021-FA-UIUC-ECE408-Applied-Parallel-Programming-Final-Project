@@ -79,7 +79,6 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const f
 
 
     cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(*device_y_ptr, (void *)host_y, ySize, cudaMemcpyHostToDevice);
     cudaMemcpy(*device_k_ptr, (void *)host_k, kSize, cudaMemcpyHostToDevice);
 
     // std::cout << "Successfully copy data to cuda memory" << std::endl;
