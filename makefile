@@ -8,12 +8,12 @@ submit_m1:
 	rm report.pdf
 	
 submit_m2:
-	cp ./docs/m1/report.pdf .
+	cp ./docs/m2/report.pdf .
 	./rai -p $(FOLDER) --queue rai_amd64_ece408 --submit=m2	
 	rm report.pdf
 
 submit_m3:
-	cp ./docs/m1/report.pdf .
+	cp ./docs/m3/report.pdf .
 	./rai -p $(FOLDER) --queue rai_amd64_ece408 --submit=m2	
 	rm report.pdf
 
