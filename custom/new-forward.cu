@@ -4,12 +4,20 @@
 #include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
+#define STREAM_NUM 100
+
+inline cudaError_t checkCuda(cudaError_t result) {
+    if (result != cudaSuccess) {
+        std::cout << "CUDA Runtime Error: " << cudaGetErrorString(result) << "\n";
+    }
+    return result;
+}
 
 __constant__ float Kernel[4096];
 
 
 __global__ void conv_forward_kernel(float *__restrict__ y, const float *__restrict__ x, const int B, const int M,
-                                    const int C, const int H, const int W, const int K) {
+                                    const int C, const int H, const int W, const int K, const int offset) {
     /*
     Modify this function to implement the forward pass described in Chapter 16.
     We have added an additional dimension to the tensors to support an entire mini-batch
@@ -44,7 +52,7 @@ __global__ void conv_forward_kernel(float *__restrict__ y, const float *__restri
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    int b = blockIdx.x;
+    int b = blockIdx.x + offset;
     int m = blockIdx.y;
     int h = (blockIdx.z / W_grid) * TILE_WIDTH + ty;
     int w = (blockIdx.z % W_grid) * TILE_WIDTH + tx;
@@ -52,6 +60,7 @@ __global__ void conv_forward_kernel(float *__restrict__ y, const float *__restri
 
     if ((w < W_out) && (h < H_out)) {
         float acc = 0.0f;
+        // Unroll for loop
         for (int c = 0; c < C; c++) {
             acc += x4d(b, c, h + 0, w + 0) * k4d_constant(m, c, 0, 0) +
                    x4d(b, c, h + 0, w + 1) * k4d_constant(m, c, 0, 1) +
@@ -113,6 +122,10 @@ __global__ void conv_forward_kernel(float *__restrict__ y, const float *__restri
 }
 
 
+cudaStream_t stream[STREAM_NUM];
+
+
+
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *__restrict__ host_y, const float *__restrict__ host_x,
                                                     const float *__restrict__ host_k, float **device_y_ptr,
                                                     float **device_x_ptr, float **device_k_ptr, const int B,
@@ -125,30 +138,34 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *__restrict__ ho
     const unsigned int ySize = B * M * H_out * W_out * sizeof(float);
     const unsigned int kSize = M * C * K * K * sizeof(float);
 
+    const int xStreamSize = B * C * H * W / STREAM_NUM;
+    const int xStreamByte = xStreamSize * sizeof(float);
+    const int yStreamSize = B * M * H_out * W_out / STREAM_NUM;
+    const int yStreamByte = yStreamSize * sizeof(float);
+
     cudaMalloc((void **)device_x_ptr, xSize);
     cudaMalloc((void **)device_y_ptr, ySize);
+    // std::cout << "Successfully allocate device memory\n";
 
-    // std::cout << "Successfully allocate cuda memory" << std::endl;
+
+    for (int i = 0; i < STREAM_NUM; i++) {
+        checkCuda(cudaStreamCreate(&stream[i]));
+    }
+    // std::cout << "Successfully create cuda Streams\n";
 
 
-    cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
     cudaMemcpyToSymbol(Kernel, host_k, kSize, 0, cudaMemcpyHostToDevice);
-
-    // std::cout << "Successfully copy data to cuda memory" << std::endl;
-
+    // std::cout << "Successfully copy kernel to device\n";
 
 
+    // cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
 
-    // We pass double pointers for you to initialize the relevant device pointers,
-    //  which are passed to the other two functions.
-
-    // Useful snippet for error checking
-    // cudaError_t error = cudaGetLastError();
-    // if(error != cudaSuccess)
-    // {
-    //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
-    //     exit(-1);
-    // }
+    for (int i = 0; i < STREAM_NUM; i++) {
+        int offset = i * xStreamSize;
+        checkCuda(cudaMemcpyAsync((void *)&(*device_x_ptr)[offset], (void *)&(host_x[offset]), xStreamByte,
+                                  cudaMemcpyHostToDevice, stream[i]));
+    }
+    // std::cout << "Successfully copy data to device\n";
 }
 
 
@@ -164,16 +181,27 @@ __host__ void GPUInterface::conv_forward_gpu(float *__restrict__ device_y, const
     const int H_grid = ceil(H_out / float(TILE_WIDTH));
     const int W_grid = ceil(W_out / float(TILE_WIDTH));
 
-    printf("M: %d\n", M);
-    printf("C: %d\n", C);
-    printf("K: %d\n", K);
-    printf("M * C * K * K: %d\n", M * C * K * K);
+    const int streamSize = B / STREAM_NUM;
+
+    // printf("B: %d\n", B);
+    // printf("M: %d\n", M);
+    // printf("C: %d\n", C);
+    // printf("K: %d\n", K);
+    // printf("M * C * K * K: %d\n", M * C * K * K);
+
+    // dim3 DimGrid(B, M, H_grid * W_grid);
+    // dim3 DimBlock(TILE_WIDTH, TILE_WIDTH, 1);
+
+    // conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, B, M, C, H, W, K);
 
 
-    dim3 DimGrid(B, M, H_grid * W_grid);
+    dim3 DimGrid(streamSize, M, H_grid * W_grid);
     dim3 DimBlock(TILE_WIDTH, TILE_WIDTH, 1);
 
-    conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, B, M, C, H, W, K);
+    for (int i = 0; i < STREAM_NUM; i++) {
+        int offset = i * streamSize;
+        conv_forward_kernel<<<DimGrid, DimBlock, 0, stream[i]>>>(device_y, device_x, B, M, C, H, W, K, offset);
+    }
 
     cudaDeviceSynchronize();
 }
@@ -187,7 +215,17 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *__restrict__ host_y, 
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
     const unsigned int ySize = B * M * H_out * W_out * sizeof(float);
-    cudaMemcpy(host_y, device_y, ySize, cudaMemcpyDeviceToHost);
+
+    const int yStreamSize = B * M * H_out * W_out / STREAM_NUM;
+    const int yStreamByte = yStreamSize * sizeof(float);
+
+
+    // cudaMemcpy(host_y, device_y, ySize, cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < STREAM_NUM; i++) {
+        int offset = i * yStreamSize;
+        cudaMemcpyAsync(&host_y[offset], &device_y[offset], yStreamByte, cudaMemcpyDeviceToHost, stream[i]);
+    }
 
     // Free device memory
     cudaFree(device_x);
