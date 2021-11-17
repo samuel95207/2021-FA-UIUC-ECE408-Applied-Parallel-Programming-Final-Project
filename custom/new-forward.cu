@@ -8,7 +8,8 @@
 __constant__ float Kernel[4096];
 
 
-__global__ void conv_forward_kernel(float *y, const float *x, const int B, const int M, const int C, const int H, const int W, const int K) {
+__global__ void conv_forward_kernel(float *__restrict__ y, const float *__restrict__ x, const int B, const int M,
+                                    const int C, const int H, const int W, const int K) {
     /*
     Modify this function to implement the forward pass described in Chapter 16.
     We have added an additional dimension to the tensors to support an entire mini-batch
@@ -52,11 +53,55 @@ __global__ void conv_forward_kernel(float *y, const float *x, const int B, const
     if ((w < W_out) && (h < H_out)) {
         float acc = 0.0f;
         for (int c = 0; c < C; c++) {
-            for (int p = 0; p < K; p++) {
-                for (int q = 0; q < K; q++) {
-                    acc += x4d(b, c, h + p, w + q) * k4d_constant(m, c, p, q);
-                }
-            }
+            acc += x4d(b, c, h + 0, w + 0) * k4d_constant(m, c, 0, 0) +
+                   x4d(b, c, h + 0, w + 1) * k4d_constant(m, c, 0, 1) +
+                   x4d(b, c, h + 0, w + 2) * k4d_constant(m, c, 0, 2) +
+                   x4d(b, c, h + 0, w + 3) * k4d_constant(m, c, 0, 3) +
+                   x4d(b, c, h + 0, w + 4) * k4d_constant(m, c, 0, 4) +
+                   x4d(b, c, h + 0, w + 5) * k4d_constant(m, c, 0, 5) +
+                   x4d(b, c, h + 0, w + 6) * k4d_constant(m, c, 0, 6) +
+                   x4d(b, c, h + 1, w + 0) * k4d_constant(m, c, 1, 0) +
+                   x4d(b, c, h + 1, w + 1) * k4d_constant(m, c, 1, 1) +
+                   x4d(b, c, h + 1, w + 2) * k4d_constant(m, c, 1, 2) +
+                   x4d(b, c, h + 1, w + 3) * k4d_constant(m, c, 1, 3) +
+                   x4d(b, c, h + 1, w + 4) * k4d_constant(m, c, 1, 4) +
+                   x4d(b, c, h + 1, w + 5) * k4d_constant(m, c, 1, 5) +
+                   x4d(b, c, h + 1, w + 6) * k4d_constant(m, c, 1, 6) +
+                   x4d(b, c, h + 2, w + 0) * k4d_constant(m, c, 2, 0) +
+                   x4d(b, c, h + 2, w + 1) * k4d_constant(m, c, 2, 1) +
+                   x4d(b, c, h + 2, w + 2) * k4d_constant(m, c, 2, 2) +
+                   x4d(b, c, h + 2, w + 3) * k4d_constant(m, c, 2, 3) +
+                   x4d(b, c, h + 2, w + 4) * k4d_constant(m, c, 2, 4) +
+                   x4d(b, c, h + 2, w + 5) * k4d_constant(m, c, 2, 5) +
+                   x4d(b, c, h + 2, w + 6) * k4d_constant(m, c, 2, 6) +
+                   x4d(b, c, h + 3, w + 0) * k4d_constant(m, c, 3, 0) +
+                   x4d(b, c, h + 3, w + 1) * k4d_constant(m, c, 3, 1) +
+                   x4d(b, c, h + 3, w + 2) * k4d_constant(m, c, 3, 2) +
+                   x4d(b, c, h + 3, w + 3) * k4d_constant(m, c, 3, 3) +
+                   x4d(b, c, h + 3, w + 4) * k4d_constant(m, c, 3, 4) +
+                   x4d(b, c, h + 3, w + 5) * k4d_constant(m, c, 3, 5) +
+                   x4d(b, c, h + 3, w + 6) * k4d_constant(m, c, 3, 6) +
+                   x4d(b, c, h + 4, w + 0) * k4d_constant(m, c, 4, 0) +
+                   x4d(b, c, h + 4, w + 1) * k4d_constant(m, c, 4, 1) +
+                   x4d(b, c, h + 4, w + 2) * k4d_constant(m, c, 4, 2) +
+                   x4d(b, c, h + 4, w + 3) * k4d_constant(m, c, 4, 3) +
+                   x4d(b, c, h + 4, w + 4) * k4d_constant(m, c, 4, 4) +
+                   x4d(b, c, h + 4, w + 5) * k4d_constant(m, c, 4, 5) +
+                   x4d(b, c, h + 4, w + 6) * k4d_constant(m, c, 4, 6) +
+                   x4d(b, c, h + 5, w + 0) * k4d_constant(m, c, 5, 0) +
+                   x4d(b, c, h + 5, w + 1) * k4d_constant(m, c, 5, 1) +
+                   x4d(b, c, h + 5, w + 2) * k4d_constant(m, c, 5, 2) +
+                   x4d(b, c, h + 5, w + 3) * k4d_constant(m, c, 5, 3) +
+                   x4d(b, c, h + 5, w + 4) * k4d_constant(m, c, 5, 4) +
+                   x4d(b, c, h + 5, w + 5) * k4d_constant(m, c, 5, 5) +
+                   x4d(b, c, h + 5, w + 6) * k4d_constant(m, c, 5, 6) +
+                   x4d(b, c, h + 6, w + 0) * k4d_constant(m, c, 6, 0) +
+                   x4d(b, c, h + 6, w + 1) * k4d_constant(m, c, 6, 1) +
+                   x4d(b, c, h + 6, w + 2) * k4d_constant(m, c, 6, 2) +
+                   x4d(b, c, h + 6, w + 3) * k4d_constant(m, c, 6, 3) +
+                   x4d(b, c, h + 6, w + 4) * k4d_constant(m, c, 6, 4) +
+                   x4d(b, c, h + 6, w + 5) * k4d_constant(m, c, 6, 5) +
+                   x4d(b, c, h + 6, w + 6) * k4d_constant(m, c, 6, 6);
         }
         y4d(b, m, h, w) = acc;
     }
@@ -68,7 +113,10 @@ __global__ void conv_forward_kernel(float *y, const float *x, const int B, const
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const float *host_x, const float *host_k, float **device_y_ptr, float **device_x_ptr, float **device_k_ptr, const int B, const int M, const int C, const int H, const int W, const int K) {
+__host__ void GPUInterface::conv_forward_gpu_prolog(const float *__restrict__ host_y, const float *__restrict__ host_x,
+                                                    const float *__restrict__ host_k, float **device_y_ptr,
+                                                    float **device_x_ptr, float **device_k_ptr, const int B,
+                                                    const int M, const int C, const int H, const int W, const int K) {
     // Allocate memory and copy over the relevant data structures to the GPU
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
@@ -104,17 +152,22 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const f
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu(float *device_y, const float *device_x, const float *device_k, const int B, const int M, const int C, const int H, const int W, const int K) {
+__host__ void GPUInterface::conv_forward_gpu(float *__restrict__ device_y, const float *__restrict__ device_x,
+                                             const float *__restrict__ device_k, const int B, const int M, const int C,
+                                             const int H, const int W, const int K) {
     // Set the kernel dimensions and call the kernel
+    if (K != 7) {
+        printf("ERROR: this function is designed for only K = 7\n");
+    }
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
     const int H_grid = ceil(H_out / float(TILE_WIDTH));
     const int W_grid = ceil(W_out / float(TILE_WIDTH));
 
-    // printf("M: %d\n", M);
-    // printf("C: %d\n", C);
-    // printf("K: %d\n", K);
-    // printf("M * C * K * K: %d\n", M * C * K * K);
+    printf("M: %d\n", M);
+    printf("C: %d\n", C);
+    printf("K: %d\n", K);
+    printf("M * C * K * K: %d\n", M * C * K * K);
 
 
     dim3 DimGrid(B, M, H_grid * W_grid);
@@ -126,7 +179,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_y, const float *devic
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_y, float *device_y, float *device_x, float *device_k, const int B, const int M, const int C, const int H, const int W, const int K) {
+__host__ void GPUInterface::conv_forward_gpu_epilog(float *__restrict__ host_y, float *__restrict__ device_y,
+                                                    float *__restrict__ device_x, float *__restrict__ device_k,
+                                                    const int B, const int M, const int C, const int H, const int W,
+                                                    const int K) {
     // Copy the output back to host
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
@@ -154,8 +210,10 @@ __host__ void GPUInterface::get_device_properties() {
         std::cout << "Max Constant memory size: " << deviceProp.totalConstMem << std::endl;
         std::cout << "Max Shared memory size per block: " << deviceProp.sharedMemPerBlock << std::endl;
         std::cout << "Max threads per block: " << deviceProp.maxThreadsPerBlock << std::endl;
-        std::cout << "Max block dimensions: " << deviceProp.maxThreadsDim[0] << " x, " << deviceProp.maxThreadsDim[1] << " y, " << deviceProp.maxThreadsDim[2] << " z" << std::endl;
-        std::cout << "Max grid dimensions: " << deviceProp.maxGridSize[0] << " x, " << deviceProp.maxGridSize[1] << " y, " << deviceProp.maxGridSize[2] << " z" << std::endl;
+        std::cout << "Max block dimensions: " << deviceProp.maxThreadsDim[0] << " x, " << deviceProp.maxThreadsDim[1]
+                  << " y, " << deviceProp.maxThreadsDim[2] << " z" << std::endl;
+        std::cout << "Max grid dimensions: " << deviceProp.maxGridSize[0] << " x, " << deviceProp.maxGridSize[1]
+                  << " y, " << deviceProp.maxGridSize[2] << " z" << std::endl;
         std::cout << "Warp Size: " << deviceProp.warpSize << std::endl;
     }
 }
