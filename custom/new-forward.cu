@@ -5,7 +5,10 @@
 
 #define TILE_WIDTH 16
 
-__global__ void conv_forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K) {
+__constant__ float Kernel[4096];
+
+
+__global__ void conv_forward_kernel(float *y, const float *x, const int B, const int M, const int C, const int H, const int W, const int K) {
     /*
     Modify this function to implement the forward pass described in Chapter 16.
     We have added an additional dimension to the tensors to support an entire mini-batch
@@ -33,22 +36,25 @@ __global__ void conv_forward_kernel(float *y, const float *x, const float *k, co
 
 #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
 #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
-#define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
+#define k4d_constant(i3, i2, i1, i0) Kernel[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
     int W_grid = ceil(W_out / float(TILE_WIDTH));
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
 
     int b = blockIdx.x;
     int m = blockIdx.y;
-    int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
-    int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
+    int h = (blockIdx.z / W_grid) * TILE_WIDTH + ty;
+    int w = (blockIdx.z % W_grid) * TILE_WIDTH + tx;
+
 
     if ((w < W_out) && (h < H_out)) {
         float acc = 0.0f;
         for (int c = 0; c < C; c++) {
             for (int p = 0; p < K; p++) {
                 for (int q = 0; q < K; q++) {
-                    acc += x4d(b, c, h + p, w + q) * k4d(m, c, p, q);
+                    acc += x4d(b, c, h + p, w + q) * k4d_constant(m, c, p, q);
                 }
             }
         }
@@ -58,7 +64,7 @@ __global__ void conv_forward_kernel(float *y, const float *x, const float *k, co
 
 #undef y4d
 #undef x4d
-#undef k4d
+#undef k4d_constant
 }
 
 
@@ -73,13 +79,12 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_y, const f
 
     cudaMalloc((void **)device_x_ptr, xSize);
     cudaMalloc((void **)device_y_ptr, ySize);
-    cudaMalloc((void **)device_k_ptr, kSize);
 
     // std::cout << "Successfully allocate cuda memory" << std::endl;
 
 
     cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(*device_k_ptr, (void *)host_k, kSize, cudaMemcpyHostToDevice);
+    cudaMemcpyToSymbol(Kernel, host_k, kSize, 0, cudaMemcpyHostToDevice);
 
     // std::cout << "Successfully copy data to cuda memory" << std::endl;
 
@@ -106,12 +111,18 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_y, const float *devic
     const int H_grid = ceil(H_out / float(TILE_WIDTH));
     const int W_grid = ceil(W_out / float(TILE_WIDTH));
 
+    // printf("M: %d\n", M);
+    // printf("C: %d\n", C);
+    // printf("K: %d\n", K);
+    // printf("M * C * K * K: %d\n", M * C * K * K);
+
+
     dim3 DimGrid(B, M, H_grid * W_grid);
     dim3 DimBlock(TILE_WIDTH, TILE_WIDTH, 1);
-    conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, device_k, B, M, C, H, W, K);
+
+    conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, B, M, C, H, W, K);
 
     cudaDeviceSynchronize();
-
 }
 
 
