@@ -8,7 +8,7 @@
 #define TILE_WIDTH_C1 16
 #define TILE_WIDTH_C4 16
 
-#define STREAM_NUM 100
+#define STREAM_NUM 50
 
 inline cudaError_t checkCuda(cudaError_t result) {
     if (result != cudaSuccess) {
@@ -222,7 +222,6 @@ __global__ void conv_forward_kernel_C4(float *__restrict__ y, const float *__res
 
 #undef y4d
 #undef x4d
-#undef x_shared3d
 #undef k4d_constant
 }
 
