@@ -38,11 +38,6 @@ __global__ void conv_forward_kernel(float *__restrict__ y, const float *__restri
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
 
-    // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
-    // An example use of these macros:
-    // float a = y4d(0,0,0,0)
-    // y4d(0,0,0,0) = a
-
 #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
 #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
 #define k4d_constant(i3, i2, i1, i0) Kernel[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
@@ -145,27 +140,19 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *__restrict__ ho
 
     cudaMalloc((void **)device_x_ptr, xSize);
     cudaMalloc((void **)device_y_ptr, ySize);
-    // std::cout << "Successfully allocate device memory\n";
 
 
     for (int i = 0; i < STREAM_NUM; i++) {
-        checkCuda(cudaStreamCreate(&stream[i]));
+        cudaStreamCreate(&stream[i]);
     }
-    // std::cout << "Successfully create cuda Streams\n";
 
 
     cudaMemcpyToSymbol(Kernel, host_k, kSize, 0, cudaMemcpyHostToDevice);
-    // std::cout << "Successfully copy kernel to device\n";
-
-
-    // cudaMemcpy(*device_x_ptr, (void *)host_x, xSize, cudaMemcpyHostToDevice);
-
     for (int i = 0; i < STREAM_NUM; i++) {
         int offset = i * xStreamSize;
-        checkCuda(cudaMemcpyAsync((void *)&(*device_x_ptr)[offset], (void *)&(host_x[offset]), xStreamByte,
-                                  cudaMemcpyHostToDevice, stream[i]));
+        cudaMemcpyAsync((void *)&(*device_x_ptr)[offset], (void *)&(host_x[offset]), xStreamByte,
+                                  cudaMemcpyHostToDevice, stream[i]);
     }
-    // std::cout << "Successfully copy data to device\n";
 }
 
 
@@ -188,11 +175,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *__restrict__ device_y, const
     // printf("C: %d\n", C);
     // printf("K: %d\n", K);
     // printf("M * C * K * K: %d\n", M * C * K * K);
-
-    // dim3 DimGrid(B, M, H_grid * W_grid);
-    // dim3 DimBlock(TILE_WIDTH, TILE_WIDTH, 1);
-
-    // conv_forward_kernel<<<DimGrid, DimBlock>>>(device_y, device_x, B, M, C, H, W, K);
 
 
     dim3 DimGrid(streamSize, M, H_grid * W_grid);
@@ -219,8 +201,6 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *__restrict__ host_y, 
     const int yStreamSize = B * M * H_out * W_out / STREAM_NUM;
     const int yStreamByte = yStreamSize * sizeof(float);
 
-
-    // cudaMemcpy(host_y, device_y, ySize, cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < STREAM_NUM; i++) {
         int offset = i * yStreamSize;
